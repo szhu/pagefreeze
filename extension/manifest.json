@@ -11,8 +11,7 @@
     "type": "module"
   },
   "icons": {
-    "24": "img/icon24.png",
-    "48": "img/icon48.png"
+    "128": "img/icon128.png"
   },
   "action": {}
 }
