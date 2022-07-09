@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+
+  "name": "Pagefreeze",
+  "description": "No funny business!",
+  "version": "0.1",
+  "permissions": [
+    "storage",
+    "tabs",
+    "webNavigation",
+    "scripting"
+  ],
+  "host_permissions": [
+    "*://*/*"
+  ],
+  "background": {
+    "service_worker": "page-background.js",
+    "type": "module"
+  },
+  "icons": {
+    "24": "img/icon24.png",
+    "48": "img/icon48.png"
+  }
+}
