@@ -170,14 +170,17 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
   let isDisabled = getDomainDisabled({ disabledDomains, domain });
   if (details.frameId === 0) {
     updateBadge({ isDisabled, tabId });
+  }
+  workerLog({ tabId, frameId, isDisabled });
+  if (isDisabled) return;
+
+  if (details.frameId === 0) {
     chrome.scripting.insertCSS({
       target: { tabId },
       origin: "USER",
       css: "iframe { display: none !important; }",
     });
   }
-  workerLog({ tabId, frameId, isDisabled });
-  if (isDisabled) return;
 
   chrome.scripting.executeScript(
     {
