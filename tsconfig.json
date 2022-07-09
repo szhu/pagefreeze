@@ -2,10 +2,7 @@
   "compilerOptions": {
     "target": "es2018",
     "module": "commonjs",
-    "lib": [
-      "dom",
-      "es2018"
-    ],
+    "lib": ["DOM", "DOM.Iterable", "ES2018"],
     "allowJs": true,
     "checkJs": true,
     "noEmit": true,

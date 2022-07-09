@@ -20,6 +20,8 @@
     "import/extensions": ["error", "always"],
     "import/no-default-export": "error",
     "import/prefer-default-export": "off",
+    "no-continue": "off",
+    "no-else-return": "off",
     "no-param-reassign": "off",
     "no-plusplus": "off",
     "no-restricted-syntax": ["error", "LabeledStatement", "WithStatement"],

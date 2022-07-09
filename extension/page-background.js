@@ -146,27 +146,42 @@ chrome.tabs.onActivated.addListener(async (details) => {
 });
 
 /**
+ * @type {Record<number, string>}
+ */
+const tabUrlCache = {};
+
+/**
  * When navigating to a new page, update the badge.
  *
  * Also, check the extension is disabled for the current domain. If it is not,
  * inject code to prevent any JS event listeners from being attached.
  */
 chrome.webNavigation.onCommitted.addListener(async (details) => {
-  if (details.frameId !== 0) return;
-
   let { url, tabId, frameId } = details;
-  workerLog("chrome.webNavigation.onCommitted", { tabId, frameId });
+  if (frameId === 0) {
+    tabUrlCache[tabId] = url;
+  } else {
+    url = tabUrlCache[tabId];
+  }
+  if (url == null) return;
 
   let domain = getDomain({ url });
   let disabledDomains = await DisabledDomains.get();
   let isDisabled = getDomainDisabled({ disabledDomains, domain });
-  updateBadge({ isDisabled, tabId });
-  workerLog("Disabled for origin", domain, isDisabled);
+  if (details.frameId === 0) {
+    updateBadge({ isDisabled, tabId });
+    chrome.scripting.insertCSS({
+      target: { tabId },
+      origin: "USER",
+      css: "iframe { display: none !important; }",
+    });
+  }
+  workerLog({ tabId, frameId, isDisabled });
   if (isDisabled) return;
 
   chrome.scripting.executeScript(
     {
-      target: { tabId },
+      target: { tabId, frameIds: [frameId] },
       // @ts-expect-error: This property hasn't been added to @types/chrome.
       injectImmediately: true,
       world: "MAIN",
@@ -179,6 +194,29 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
           console.info("Pagefreeze:", ...args);
         }
 
+        document.addEventListener("DOMContentLoaded", () => {
+          let okPositions = new Set(["static", "relative", "absolute"]);
+          for (let el of document.querySelectorAll("*")) {
+            if (!(el instanceof HTMLElement)) continue;
+
+            if (el instanceof HTMLImageElement) {
+              if (el.src === "" && el.dataset.src != null) {
+                el.src = el.dataset.src;
+                el.removeAttribute("data-src");
+              }
+            }
+
+            let { position } = window.getComputedStyle(el);
+            if (!okPositions.has(position)) {
+              if (position === "fixed") {
+                el.style.setProperty("position", "absolute", "important");
+              } else {
+                el.style.setProperty("position", "relative", "important");
+              }
+            }
+          }
+        });
+
         /**
          * @param {Record<string, any>} obj
          * @param {string} objName
@@ -187,9 +225,15 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
         function assignDummyMethods(obj, objName, methodMap) {
           for (let [key, value] of Object.entries(methodMap)) {
             // eslint-disable-next-line no-param-reassign
-            obj[key] = () => {
-              pageLog(`Prevented ${objName}.${key}`);
-              return value;
+            // obj[key] = undefined;
+            obj[key] = (/** @type {any} */ ...args) => {
+              // pageLog(`Prevented ${objName}.${key}`);
+              // console.trace();
+              if (typeof value === "function") {
+                return value(...args);
+              } else {
+                return value;
+              }
             };
           }
         }
@@ -198,10 +242,19 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
           addEventListener: undefined,
           setTimeout: undefined,
           setInterval: undefined,
-          fetch: Promise.reject(),
+          // fetch: Promise.reject("Pagefreeze: fetch prevented"),
+          // fetch: Promise.resolve({}),
         });
 
+        let documentCreateElement = document.createElement;
         assignDummyMethods(window.document, "document", {
+          createElement: (/** @type {string} */ name) => {
+            if (name.toLowerCase() === "script") {
+              return document.createElement("template");
+            } else {
+              return documentCreateElement.call(document, name);
+            }
+          },
           addEventListener: undefined,
         });
 
