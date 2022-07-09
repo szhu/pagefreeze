@@ -117,6 +117,10 @@ async function updateBadge({ tabId, isDisabled }) {
   }
 }
 
+/**
+ * When the extension button is clicked, toggle whether the extension is
+ * disabled for this domain.
+ */
 chrome.action.onClicked.addListener(async (tab) => {
   let { id: tabId, url } = tab;
   if (tabId == null || url == null) return;
@@ -127,6 +131,9 @@ chrome.action.onClicked.addListener(async (tab) => {
   await updateBadge({ isDisabled, tabId });
 });
 
+/**
+ * When switching tabs, update the badge.
+ */
 chrome.tabs.onActivated.addListener(async (details) => {
   let tab = await chrome.tabs.get(details.tabId);
   let { id: tabId, url } = tab;
@@ -138,90 +145,94 @@ chrome.tabs.onActivated.addListener(async (details) => {
   await updateBadge({ isDisabled, tabId });
 });
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.webNavigation.onCommitted.addListener(async (details) => {
-    if (details.frameId !== 0) return;
+/**
+ * When navigating to a new page, update the badge.
+ *
+ * Also, check the extension is disabled for the current domain. If it is not,
+ * inject code to prevent any JS event listeners from being attached.
+ */
+chrome.webNavigation.onCommitted.addListener(async (details) => {
+  if (details.frameId !== 0) return;
 
-    let { url, tabId, frameId } = details;
-    workerLog("chrome.webNavigation.onCommitted", { tabId, frameId });
+  let { url, tabId, frameId } = details;
+  workerLog("chrome.webNavigation.onCommitted", { tabId, frameId });
 
-    let domain = getDomain({ url });
-    let disabledDomains = await DisabledDomains.get();
-    let isDisabled = getDomainDisabled({ disabledDomains, domain });
-    updateBadge({ isDisabled, tabId });
-    workerLog("Disabled for origin", domain, isDisabled);
-    if (isDisabled) return;
+  let domain = getDomain({ url });
+  let disabledDomains = await DisabledDomains.get();
+  let isDisabled = getDomainDisabled({ disabledDomains, domain });
+  updateBadge({ isDisabled, tabId });
+  workerLog("Disabled for origin", domain, isDisabled);
+  if (isDisabled) return;
 
-    chrome.scripting.executeScript(
-      {
-        target: { tabId },
-        // @ts-expect-error: This property hasn't been added to @types/chrome.
-        injectImmediately: true,
-        world: "MAIN",
-        func: () => {
-          /**
-           * @param {any[]} args
-           */
-          function pageLog(...args) {
-            // eslint-disable-next-line no-console
-            console.info("Pagefreeze:", ...args);
+  chrome.scripting.executeScript(
+    {
+      target: { tabId },
+      // @ts-expect-error: This property hasn't been added to @types/chrome.
+      injectImmediately: true,
+      world: "MAIN",
+      func: () => {
+        /**
+         * @param {any[]} args
+         */
+        function pageLog(...args) {
+          // eslint-disable-next-line no-console
+          console.info("Pagefreeze:", ...args);
+        }
+
+        /**
+         * @param {Record<string, any>} obj
+         * @param {string} objName
+         * @param {Record<string, any>} methodMap
+         */
+        function assignDummyMethods(obj, objName, methodMap) {
+          for (let [key, value] of Object.entries(methodMap)) {
+            // eslint-disable-next-line no-param-reassign
+            obj[key] = () => {
+              pageLog(`Prevented ${objName}.${key}`);
+              return value;
+            };
           }
+        }
 
-          /**
-           * @param {Record<string, any>} obj
-           * @param {string} objName
-           * @param {Record<string, any>} methodMap
-           */
-          function assignDummyMethods(obj, objName, methodMap) {
-            for (let [key, value] of Object.entries(methodMap)) {
-              // eslint-disable-next-line no-param-reassign
-              obj[key] = () => {
-                pageLog(`Prevented ${objName}.${key}`);
-                return value;
-              };
-            }
-          }
+        assignDummyMethods(window, "window", {
+          addEventListener: undefined,
+          setTimeout: undefined,
+          setInterval: undefined,
+          fetch: Promise.reject(),
+        });
 
-          assignDummyMethods(window, "window", {
-            addEventListener: undefined,
-            setTimeout: undefined,
-            setInterval: undefined,
-            fetch: Promise.reject(),
-          });
+        assignDummyMethods(window.document, "document", {
+          addEventListener: undefined,
+        });
 
-          assignDummyMethods(window.document, "document", {
-            addEventListener: undefined,
-          });
+        assignDummyMethods(Element.prototype, "Element.prototype", {
+          addEventListener: undefined,
+        });
 
-          assignDummyMethods(Element.prototype, "Element.prototype", {
+        XMLHttpRequest.constructor = function() {
+          pageLog("XMLHttpRequest");
+          assignDummyMethods(this, "XMLHttpRequest", {
+            open: undefined,
+            setRequestHeader: undefined,
+            send: undefined,
             addEventListener: undefined,
           });
+        };
 
-          XMLHttpRequest.constructor = function() {
-            pageLog("XMLHttpRequest");
-            assignDummyMethods(this, "XMLHttpRequest", {
-              open: undefined,
-              setRequestHeader: undefined,
-              send: undefined,
-              addEventListener: undefined,
-            });
-          };
+        IntersectionObserver.constructor = function() {
+          pageLog("IntersectionObserver");
+          assignDummyMethods(this, "XMLHttpRequest", {
+            observe: undefined,
+            unobserve: undefined,
+            disconnect: undefined,
+          });
+        };
 
-          IntersectionObserver.constructor = function() {
-            pageLog("IntersectionObserver");
-            assignDummyMethods(this, "XMLHttpRequest", {
-              observe: undefined,
-              unobserve: undefined,
-              disconnect: undefined,
-            });
-          };
-
-          return 1;
-        },
+        return 1;
       },
-      (...results) => {
-        // log(222222222222222, results);
-      },
-    );
-  });
+    },
+    (...results) => {
+      // log(222222222222222, results);
+    },
+  );
 });
