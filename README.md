@@ -3,59 +3,72 @@
 > **Note**\
 > This extension is still a work in progress.
 
-Do you expect most web pages to behave like documents, and get disappointed when
-they try to act too "smart"? Do you get frustrated when websites add new content
-after a few seconds, or as you scroll down the page? Do you feel like websites
-shouldn't use your computer's idle CPU without your consent?
+_Do you expect most web pages to behave like documents, and get disappointed
+when they act too "smart"?_
+
+_Do you get frustrated when websites add modals, ads, and other content after a
+few seconds after the page loads, or as you scroll down the page?_
+
+_Do you feel like websites shouldn't be allowed use your computer's idle CPU
+without your consent?_
 
 **Pagefreeze can help.** It will:
 
-- Disable asynchronous JavaScript timers and event handlers.
+- Disable any JavaScript that runs not immediately when the page is loaded.
 - Remove "fixed" and "sticky" elements that shrink the available viewing space.
-- Allow you to easily toggle whether it's enabled per-site.
+- Allow you to easily toggle whether it's enabled for each website.
 
-## Technical details
+## Details
 
-This extension disables all JavaScript timers on web pages.
+- This extension disables most JavaScript timers and event handlers on web
+  pages.
 
-- Allowed:
-  - Initially-loaded, synchronous code
-  - Code triggered by `load` events
-  - Code triggered when a `fetch()` or `XMLHttpRequest` completes
-- Blocked (in a way that doesn't cause uncaught errors in the allowed code):
-  - `addEventListener` on `window`, `document`, and `Element.prototype`\
-    (except `load` events)
-  - `setTimeout`, `setInterval`
-  - `IntersectionObserver`
+  <details>
 
-This extension also removes `position: fixed` and `position: sticky`.
+  - Allowed:
+    - Initially-loaded, synchronous code
+    - Code triggered by `load` events
+    - Code triggered when a `fetch()` or `XMLHttpRequest` completes
+  - Blocked (in a way that doesn't cause uncaught errors in the allowed code):
+    - `addEventListener` on `window`, `document`, and `Element.prototype`\
+      (except `load` events)
+    - `setTimeout`, `setInterval`
+    - `IntersectionObserver`
 
-Click the extension icon to disable or re-enable for the current domain.
+  </details>
 
-## Running and contributing
+- This extension also removes `position: fixed` and `position: sticky`.
 
-This project is set up to be as easy as possible to run and edit. The source
-code can be run directly, without installing anything or compiling!
+- Click the extension icon to disable or re-enable it for the current domain.
 
-How to test in Chrome and other Chromium browsers:
+## Installing
 
-- Go to `chrome://extensions`.
-- At the top-right, make sure **Developer mode** is turned on.
-- If you have the Chrome Web Store version of the extension installed, you might
-  want to turn off temporarily to reduce confusion. You can do that by toggling
-  the switch next to it.
-- Drag the `extension` folder into the tab.
-- The extension is now installed!
-- Notes:
-  - If you often find yourself needing to toggle whether this extension is
-    enabled for sites, It might be helpful pin the extension to the toolbar.
-  - On the Extensions page, the extension has a reload (circular arrow) button
-    next to it. After modifying extension code, click the reload button to apply
-    the changes.
+To install and test in Chrome:
+
+1. Go to `chrome://extensions`.
+2. At the top-right, make sure **Developer mode** is turned on.
+3. Drag the `extension` folder into the tab. The extension is now installed!
+
+Helpful tips:
+
+- Pin the extension to the toolbar. This allows you to quickly toggle whether
+  it's enabled for sites.
+- Disable the Chrome Web Store version of the extension (if you have it
+  installed) to reduce confusion.
+- After editing the extension code, click the reload arrow next to the extension
+  on the extensions page to load the new code.
+
+## Contributing
+
+This project is set up to be easy to edit. You can directly run the source code
+without installing anything or compiling!
 
 If you are contributing PRs or otherwise want to avoid making bugs, this project
-has a linter (ESLint), formatter (Prettier), and typechecker (TypeScript)
-configured to make sure that code is as error-free and readable as possible.
+has linters (ESLint, Prettier, TypeScript) configured to help make sure code is
+error-free and readable.
+
+<details>
+<summary>How to set up linters</summary>
 
 - To have these tools automatically check your code before each commit, just run
   `npm install`, `yarn install`, or `pnpm install`.
@@ -67,3 +80,5 @@ configured to make sure that code is as error-free and readable as possible.
   us to have TypeScript's type check but without needing to have a compile
   process. TS/JSDoc syntax reference:
   <https://www.typescriptlang.org/docs/handbook/type-checking-javascript-files.html>
+
+</details>
