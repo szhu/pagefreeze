@@ -52,7 +52,7 @@ const DisabledDomains = /** @type {CachedValue<Set<string>>} */ (new CachedValue
     });
     return new Set(disabledDomains);
   },
-  async (disabledDomains) => {
+  async disabledDomains => {
     await chrome.storage.sync.set({ disabledDomains: [...disabledDomains] });
   },
 ));
@@ -121,7 +121,7 @@ async function updateBadge({ tabId, isDisabled }) {
  * When the extension button is clicked, toggle whether the extension is
  * disabled for this domain.
  */
-chrome.action.onClicked.addListener(async (tab) => {
+chrome.action.onClicked.addListener(async tab => {
   let { id: tabId, url } = tab;
   if (tabId == null || url == null) return;
 
@@ -134,7 +134,7 @@ chrome.action.onClicked.addListener(async (tab) => {
 /**
  * When switching tabs, update the badge.
  */
-chrome.tabs.onActivated.addListener(async (details) => {
+chrome.tabs.onActivated.addListener(async details => {
   let tab = await chrome.tabs.get(details.tabId);
   let { id: tabId, url } = tab;
   if (tabId == null || url == null) return;
@@ -156,7 +156,7 @@ const tabUrlCache = {};
  * Also, check the extension is disabled for the current domain. If it is not,
  * inject code to prevent any JS event listeners from being attached.
  */
-chrome.webNavigation.onCommitted.addListener(async (details) => {
+chrome.webNavigation.onCommitted.addListener(async details => {
   let { url, tabId, frameId } = details;
   if (frameId === 0) {
     tabUrlCache[tabId] = url;
@@ -278,15 +278,15 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
           },
         });
 
-        XMLHttpRequest.constructor = function() {
-          pageLog("XMLHttpRequest");
-          assignDummyMethods(this, "XMLHttpRequest", {
-            open: undefined,
-            setRequestHeader: undefined,
-            send: undefined,
-            addEventListener: undefined,
-          });
-        };
+        // XMLHttpRequest.constructor = function() {
+        //   pageLog("XMLHttpRequest");
+        //   assignDummyMethods(this, "XMLHttpRequest", {
+        //     open: undefined,
+        //     setRequestHeader: undefined,
+        //     send: undefined,
+        //     addEventListener: undefined,
+        //   });
+        // };
 
         IntersectionObserver.constructor = function() {
           pageLog("IntersectionObserver");
