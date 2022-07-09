@@ -11,9 +11,7 @@
   "overrides": [
     {
       "files": "*.json",
-      "options": {
-        "printWidth": 0
-      }
+      "options": {}
     }
   ]
 }
