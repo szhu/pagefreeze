@@ -226,11 +226,11 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
           for (let [key, value] of Object.entries(methodMap)) {
             // eslint-disable-next-line no-param-reassign
             // obj[key] = undefined;
-            obj[key] = (/** @type {any} */ ...args) => {
+            obj[key] = function(/** @type {any} */ ...args) {
               // pageLog(`Prevented ${objName}.${key}`);
               // console.trace();
               if (typeof value === "function") {
-                return value(...args);
+                return value.call(this, ...args);
               } else {
                 return value;
               }
@@ -250,7 +250,7 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
         assignDummyMethods(window.document, "document", {
           createElement: (/** @type {string} */ name) => {
             if (name.toLowerCase() === "script") {
-              return document.createElement("template");
+              return documentCreateElement.call(document, "template");
             } else {
               return documentCreateElement.call(document, name);
             }
@@ -258,8 +258,21 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
           addEventListener: undefined,
         });
 
+        const ElementPrototypeAddEventListener =
+          Element.prototype.addEventListener;
+        let okEvents = new Set(["load"]);
         assignDummyMethods(Element.prototype, "Element.prototype", {
-          addEventListener: undefined,
+          // addEventListener: undefined,
+          addEventListener(
+            /** @type {string} */ name,
+            /** @type {[any, any]} */ ...args
+          ) {
+            if (okEvents.has(name)) {
+              return ElementPrototypeAddEventListener.call(this, name, ...args);
+            } else {
+              return undefined;
+            }
+          },
         });
 
         XMLHttpRequest.constructor = function() {
