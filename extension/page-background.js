@@ -6,57 +6,93 @@ function workerLog(...args) {
   console.info("Pagefreeze:", ...args);
 }
 
-class ExtStorage {
+/**
+ * @template {any} T
+ */
+class CachedValue {
+  /** @type {T | undefined} */
+  value = undefined;
+
+  /** @type {boolean} */
+  retrieved = false;
+
   /**
-   * @param {chrome.storage.StorageArea} area
+   * @param {() => Promise<T>} getter
+   * @param {(value: T) => Promise<void>} setter
    */
-  constructor(area) {
-    this.area = area;
-    /** @type {Record<string, any>} */
-    this.cache = {};
+  constructor(getter, setter) {
+    this.getter = getter;
+    this.setter = setter;
   }
 
   /**
-   * @param {Record<string, any>} keyMapping
+   * @return {Promise<T>}
    */
-  get(keyMapping) {
-    let result = { ...keyMapping };
-    for (let key of Object.keys(keyMapping)) {
-      if (key in this.cache) {
-        result[key] = this.cache[key];
-      }
+  async get(force = false) {
+    if (force || !this.retrieved) {
+      this.value = await this.getter();
+      this.retrieved = true;
     }
-    return result;
+    return /** @type {T} */ (this.value);
   }
 
   /**
-   * @template {{[key: string]: any}} T
-   * @param {T} keyMapping
+   * @param {T} value
    */
-  async load(keyMapping) {
-    let result = await this.area.get(keyMapping);
-    this.cache = { ...this.cache, ...result };
-    return /** @type {T} */ (result);
-  }
-
-  /**
-   * @param {Record<string, any>} keyMapping
-   */
-  async save(keyMapping) {
-    this.cache = { ...this.cache, ...keyMapping };
-    await this.area.set(keyMapping);
+  async set(value) {
+    this.value = value;
+    await this.setter(value);
   }
 }
 
-const SyncStorage = new ExtStorage(chrome.storage.sync);
-workerLog(SyncStorage);
+const DisabledDomains = /** @type {CachedValue<Set<string>>} */ (new CachedValue(
+  async () => {
+    let { disabledDomains } = await chrome.storage.sync.get({
+      disabledDomains: [],
+    });
+    return new Set(disabledDomains);
+  },
+  async (disabledDomains) => {
+    await chrome.storage.sync.set({ disabledDomains: [...disabledDomains] });
+  },
+));
 
-async function toggleDomain(domain) {
-  let old = await SyncStorage.load({
-    disabledDomains: /** @type {string[]} */ ([]),
-  });
-  let disabledDomains = new Set(old.disabledDomains);
-  console.log(disabledDomains);
+/**
+ * @typedef {{
+ *   tabId: number,
+ *   url: string,
+ *   domain: string,
+ *   isDisabled: boolean,
+ *   disabledDomains: Awaited<ReturnType<typeof DisabledDomains.get>>
+ * }} Context
+ */
+
+/**
+ * @template {keyof Context} K
+ * @typedef {Required<Pick<Context, K>> & Partial<Omit<Context, K>>} PickContext
+ */
+
+/**
+ * @param {PickContext<"url">} context
+ */
+function getDomain(context) {
+  const { url } = context;
+  return new URL(url).origin;
+}
+
+/**
+ * @param {PickContext<"disabledDomains" | "domain">} context
+ */
+function getDomainDisabled(context) {
+  const { disabledDomains, domain } = context;
+  return disabledDomains.has(domain);
+}
+
+/**
+ * @param {PickContext<"disabledDomains" | "domain">} context
+ */
+async function toggleDomain(context) {
+  const { disabledDomains, domain } = context;
 
   if (disabledDomains.has(domain)) {
     workerLog("disabledDomains.delete", domain);
@@ -66,59 +102,59 @@ async function toggleDomain(domain) {
     disabledDomains.add(domain);
   }
 
-  await SyncStorage.save({ disabledDomains: [...disabledDomains] });
+  await DisabledDomains.set(disabledDomains);
+  return disabledDomains.has(domain);
 }
 
 /**
- * @param {number} tabId
- * @param {string } url
+ * @param {Pick<Context, "tabId" | "isDisabled">} context
  */
-function updateBadge(tabId, url) {
-  let domain = new URL(url).origin;
-  if (SyncStorage.cache.disabledDomains.includes(domain)) {
-    chrome.action.setBadgeText({ tabId, text: "▶ JS" });
+async function updateBadge({ tabId, isDisabled }) {
+  if (isDisabled) {
+    await chrome.action.setBadgeText({ tabId, text: "▶ JS" });
   } else {
-    chrome.action.setBadgeText({ tabId, text: "" });
-    // chrome.action.setBadgeBackgroundColor({ tabId, color: "transparent" });
+    await chrome.action.setBadgeText({ tabId, text: "" });
   }
 }
 
 chrome.action.onClicked.addListener(async (tab) => {
-  if (tab.id == null) return;
-  if (tab.url == null) return;
+  let { id: tabId, url } = tab;
+  if (tabId == null || url == null) return;
 
-  let domain = new URL(tab.url).origin;
-  await toggleDomain(domain);
-  updateBadge(tab.id, tab.url);
+  let domain = getDomain({ url });
+  let disabledDomains = await DisabledDomains.get();
+  let isDisabled = await toggleDomain({ disabledDomains, domain });
+  await updateBadge({ isDisabled, tabId });
+});
+
+chrome.tabs.onActivated.addListener(async (details) => {
+  let tab = await chrome.tabs.get(details.tabId);
+  let { id: tabId, url } = tab;
+  if (tabId == null || url == null) return;
+
+  let domain = getDomain({ url });
+  let disabledDomains = await DisabledDomains.get();
+  let isDisabled = getDomainDisabled({ disabledDomains, domain });
+  await updateBadge({ isDisabled, tabId });
 });
 
 chrome.runtime.onInstalled.addListener(() => {
-  SyncStorage.load({
-    disabledDomains: /** @type {string[]} */ ([]),
-  });
-
-  chrome.webNavigation.onCommitted.addListener((details) => {
+  chrome.webNavigation.onCommitted.addListener(async (details) => {
     if (details.frameId !== 0) return;
 
-    {
-      let { tabId, frameId } = details;
-      workerLog("chrome.webNavigation.onCommitted", { tabId, frameId });
+    let { url, tabId, frameId } = details;
+    workerLog("chrome.webNavigation.onCommitted", { tabId, frameId });
 
-      updateBadge(details.tabId, details.url);
-      let domain = new URL(details.url).origin;
-      workerLog(
-        "Disabled for origin",
-        domain,
-        SyncStorage.cache.disabledDomains.includes(domain),
-      );
-      if (SyncStorage.cache.disabledDomains.includes(domain)) {
-        return;
-      }
-    }
+    let domain = getDomain({ url });
+    let disabledDomains = await DisabledDomains.get();
+    let isDisabled = getDomainDisabled({ disabledDomains, domain });
+    updateBadge({ isDisabled, tabId });
+    workerLog("Disabled for origin", domain, isDisabled);
+    if (isDisabled) return;
 
     chrome.scripting.executeScript(
       {
-        target: { tabId: details.tabId },
+        target: { tabId },
         // @ts-expect-error: This property hasn't been added to @types/chrome.
         injectImmediately: true,
         world: "MAIN",
